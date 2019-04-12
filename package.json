@@ -1,9 +1,9 @@
 {
-  "name": "vscode-reveal",
-  "displayName": "vscode-reveal",
+  "name": "vscode-reveal2",
+  "displayName": "vscode-reveal2",
   "description": "Show markdown as revealJs presentation",
-  "version": "3.3.0",
-  "publisher": "evilz",
+  "version": "3.3.3",
+  "publisher": "me",
   "author": "Vincent Bourdon",
   "license": "MIT",
   "icon": "images/logo-v2.png",
@@ -348,14 +348,13 @@
     "all": true
   },
   "dependencies": {
-    "express": "^4.16.4",
     "express-es6-template-engine": "^2.1.7",
     "fs-extra": "^7.0.1",
     "gray-matter": "^4.0.2",
+    "lodash": "^4.17.11",
     "opn": "^5.4.0",
     "os": "^0.1.1",
-    "reveal.js": "^3.7.0",
-    "lodash": "^4.17.11"
+    "reveal.js": "^3.7.0"
   },
   "devDependencies": {
     "@types/chai": "^4.1.7",
@@ -371,7 +370,7 @@
     "mocha": "^5.2.0",
     "mocha-junit-reporter": "^1.18.0",
     "mocha-multi-reporters": "^1.1.7",
-    "nyc": "^13.2.0",
+    "nyc": "^13.3.0",
     "request": "^2.88.0",
     "sonarqube-scanner": "^2.1.2",
     "source-map-support": "^0.5.10",

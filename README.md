@@ -1,3 +1,6 @@
+This started as a fork of the below, but significant changes have been made to support a more hackable workflow
+
+
 # vscode-reveal [![](https://img.shields.io/badge/Version-3.3.0-blue.svg)](https://marketplace.visualstudio.com/items?itemName=evilz.vscode-reveal)
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=evilz_vscode-reveal&metric=alert_status)](https://sonarcloud.io/dashboard?id=evilz_vscode-reveal)

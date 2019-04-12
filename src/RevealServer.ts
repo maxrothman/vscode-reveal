@@ -1,22 +1,24 @@
-import * as express from 'express'
-import * as es6Renderer from 'express-es6-template-engine'
 import * as http from 'http'
+import * as fs from 'fs'
 import * as path from 'path'
 
-import { Configuration } from './Configuration'
+import { Logger } from './Logger';
 
 export class RevealServer {
-  private readonly app = express()
   private server: http.Server | null
-  private readonly host = 'localhost'
+  private rootFileDir: string | null
 
-  constructor(
-    private readonly getRootDir: () => string,
-    private readonly getSlideContent: () => string | null,
-    private readonly getConfiguration: () => Configuration,
-    private readonly isInExport: () => boolean,
-    private readonly exportFn: (url: string, data: string) => void
-  ) {}
+  public constructor(
+    private readonly logger: Logger
+  ) { }
+
+  public get rootDir(): string {
+    if (this.rootFileDir == null) {
+      throw new Error("Can't get root path of server before server is started");
+    }
+    return this.rootFileDir
+  }
+
 
   public get isListening() {
     return this.server ? this.server.listening : false
@@ -34,93 +36,74 @@ export class RevealServer {
     }
 
     const addr = this.server.address()
-    return typeof addr === 'string' ? addr : `http://${this.host}:${addr.port}/`
+    return typeof addr === 'string' ? addr : `http://${addr.address}:${addr.port}/`
   }
-  public start() {
-    try {
-      if (!this.isListening) {
-        this.configure()
-        this.refresh()
-        this.server = this.app.listen(0)
-      }
-    } catch (err) {
-      throw new Error(`Cannot start server: ${err}`)
+
+  public start(serverRoot: string) {
+    if (!this.isListening) {
+      console.log("starting server")
+      this.logger.log(`Starting server at ${serverRoot}/ ...`)
+      this.rootFileDir = serverRoot
+      this.server = this.runServer(serverRoot).listen(8126, '127.0.0.1')
+      this.logger.log('Server started')
+      this.server.on('listening', () => console.log('Server listening'))
+      this.server.on('close', () => console.log('Server closed'))
+      this.server.on('error', (err) => console.log("Got server error:", err))
     }
   }
 
-  public refresh() {
-    this.app.use('/', express.static(this.getRootDir()))
-  }
+  //ripped shamelessly from https://stackoverflow.com/questions/16333790/node-js-quick-file-server-static-files-over-http
+  private runServer(basePath: string) {
+    return http.createServer((request, response) => {
+      if (request.url == undefined || request.url == '/') {
+        request.url = 'index.html'
+      }
+      var filePath = path.join(basePath, request.url)
 
-  public configure() {
-    this.app.use(this.exportMiddleware(this.exportFn, () => this.isInExport()))
+      var extname = path.extname(filePath);
+      var contentType = 'text/html';
+      switch (extname) {
+        case '.js':
+          contentType = 'text/javascript';
+          break;
+        case '.css':
+          contentType = 'text/css';
+          break;
+        case '.json':
+          contentType = 'application/json';
+          break;
+        case '.png':
+          contentType = 'image/png';
+          break;
+        case '.jpg':
+          contentType = 'image/jpg';
+          break;
+        case '.wav':
+          contentType = 'audio/wav';
+          break;
+      }
 
-    const libsPAth = path.join(__dirname, '..', '..', 'libs')
-    this.app.use('/libs', express.static(libsPAth))
-    this.app.get('/markdown.md', (req, res) => {
-      res.send(this.getSlideContent())
-    })
+      const logReq = (code: number) => this.logger.log(`serving request path=${request.url} response=${code}}`)
 
-    const viewsPath = path.resolve(__dirname, '..', '..', 'views')
-    this.app.engine('marko', es6Renderer)
-    this.app.set('views', viewsPath)
-    this.app.set('view engine', 'marko')
-
-    this.app.get('/', (req, res) => {
-      res.render(
-        'template',
-        {
-          locals: {
-            ...this.getConfiguration()
-          },
-          partials: {}
-        },
-        (err, content) => {
-          if (err) {
-            res.send(err.message)
+      fs.readFile(filePath, function (error, content) {
+        if (error) {
+          if (error.code == 'ENOENT') {
+            logReq(404)
+            response.writeHead(404)
+            response.end('404 Not Found: ' + request.url, 'utf-8');
           } else {
-            // save here
-            res.send(content)
+            logReq(500)
+            response.writeHead(500);
+            response.end('500 internal error: ' + error.code + ' ..\n');
+            response.end();
           }
+        } else {
+          logReq(200)
+          response.writeHead(200, { 'Content-Type': contentType });
+          response.end(content, 'utf-8');
         }
-      )
+      });
     })
-  }
-
-  private readonly exportMiddleware = (exportfn, isInExport) => {
-    return (req, res, next) => {
-      const _exportfn = exportfn
-      const _isInExport = isInExport
-      if (_isInExport()) {
-        const oldWrite = res.write
-        const oldEnd = res.end
-        const chunks: any[] = []
-
-        // tslint:disable-next-line:only-arrow-functions
-        res.write = function(chunk) {
-          chunks.push(chunk)
-
-          oldWrite.apply(res, arguments)
-        }
-
-        // tslint:disable-next-line:only-arrow-functions
-        res.end = async function(chunk) {
-          if (chunk) {
-            chunks.push(chunk)
-          }
-
-          // console.log(req.path, body)
-          try {
-            const body = Buffer.concat(chunks).toString('utf8')
-            _exportfn(req.path, body)
-          } catch (error) {
-            console.error(`can get body of ${req.path}: ${error}`)
-          }
-
-          oldEnd.apply(res, arguments)
-        }
-      }
-      next()
-    }
   }
 }
+

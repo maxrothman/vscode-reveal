@@ -9,9 +9,12 @@ import {
   TextDocumentChangeEvent,
   TextEditor,
   TextEditorSelectionChangeEvent,
-  Webview
+  Uri,
+  Webview,
+  workspace
 } from 'vscode'
 
+import * as fs from 'fs'
 import * as path from 'path'
 
 import { debounce } from 'lodash'
@@ -35,6 +38,7 @@ export default class Container {
   private webView: Webview | null
 
   public onDidChangeTextEditorSelection(event: TextEditorSelectionChangeEvent) {
+    console.log('onDidChangeTextEditorSelection')
     if (this.editorContext === null) {
       return
     }
@@ -53,14 +57,17 @@ export default class Container {
   }
 
   public onDidChangeActiveTextEditor(editor: TextEditor | undefined): any {
+    console.log('onDidChangeActiveTextEditor')
     if (editor && editor.document.languageId === 'markdown') {
       this.editorContext = new EditorContext(editor, getDocumentOptions(this.configuration))
     }
-    this.server.start()
-    this.server.refresh()
-    this.refreshWebView()
-    this.statusBarController.update()
-    this.slidesExplorer.update()
+    workspace.findFiles('**/package.json').then(uris => {
+      const revealPackageJson = this.findReveal(uris)
+      this.server.start(revealPackageJson)
+      this.refreshWebView()
+      this.statusBarController.update()
+      this.slidesExplorer.update()
+    })
   }
 
   public onDidChangeTextDocument(e: TextDocumentChangeEvent) {
@@ -81,27 +88,41 @@ export default class Container {
     }
 
     this._configuration = this.loadConfiguration()
-    this.logger.LogLevel = this._configuration.logLevel
+    // this.logger.LogLevel = this._configuration.logLevel
   }
 
   public constructor(private readonly loadConfiguration: () => Configuration, private readonly logger: Logger) {
+    console.log('constructor')
     this._configuration = this.loadConfiguration()
 
     this.editorContext = null
 
-    this.server = new RevealServer(
-      () => this.rootDir,
-      () => this.slideContent,
-      () => this.configuration,
-      () => this.isInExport,
-      (req, data) => this.saveHtmlFn(req, data)
-    )
+    this.server = new RevealServer(logger)
 
     this.statusBarController = new StatusBarController(() => this.server.uri, () => this.slideCount)
     this.statusBarController.update()
 
     this.slidesExplorer = new SlideTreeProvider(() => this.slides)
     this.slidesExplorer.register()
+  }
+
+  private findReveal(packagePaths: Uri[]): string {
+    // Look for the topmost dir containing reveal.js's package.json
+    packagePaths.sort((a, b) => {
+      const aLen = a.fsPath.split(path.sep).length
+      const bLen = b.fsPath.split(path.sep).length
+      return bLen - aLen
+    })
+
+    for (const pUri of packagePaths) {
+      const p = pUri.fsPath
+      const packageJson = JSON.parse(fs.readFileSync(p, 'utf8'))
+      if (packageJson.name === "reveal.js") {
+        return path.dirname(p)
+      }
+    }
+    throw new Error("Can't find reveal.js source in the current workspace")
+
   }
 
   private get rootDir() {
@@ -119,7 +140,7 @@ export default class Container {
   public get configuration() {
     return this.editorContext !== null && this.editorContext.hasfrontConfig
       ? // tslint:disable-next-line:no-object-literal-type-assertion
-        ({ ...this._configuration, ...this.editorContext.documentOptions } as Configuration)
+      ({ ...this._configuration, ...this.editorContext.documentOptions } as Configuration)
       : this._configuration
   }
 
@@ -171,14 +192,19 @@ export default class Container {
   }
 
   public getUri(withPosition = true): string | null {
+    console.log('in geturi')
     if (!this.server.isListening || this.editorContext === null) {
       return null
     }
 
-    const serverUri = this.server.uri
+    const mdName = this.editorContext.editor.document.fileName
+    const relativePath = path.relative(this.server.rootDir, path.dirname(mdName))
+    const serverUri = `${this.server.uri}${relativePath}/${path.basename(mdName, '.md')}.html`
     const slidepos = this.editorContext.position
+    const result = withPosition ? `${serverUri}#/${slidepos.horizontal}/${slidepos.vertical}/${Date.now()}` : `${serverUri}`
 
-    return withPosition ? `${serverUri}#/${slidepos.horizontal}/${slidepos.vertical}/${Date.now()}` : `${serverUri}`
+    console.log(`Setting URI to ${result}`)
+    return result
   }
 
   public isMarkdownFile() {
